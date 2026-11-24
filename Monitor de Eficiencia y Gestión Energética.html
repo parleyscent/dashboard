@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Monitor de Eficiencia y Gestión Energética</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--ink:#1d2433;--muted:#6b7385;--line:#e3e7ee;--blue:#1e6fd9;--green:#1a9e5c;--red:#d64541;--amber:#e0a100;--base:#4a90d9;--int:#f2994a;--punta:#c0392b;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1420;--card:#171e2e;--ink:#e8ecf4;--muted:#8a94a8;--line:#263045;}}
+:root[data-theme="dark"]{--bg:#0f1420;--card:#171e2e;--ink:#e8ecf4;--muted:#8a94a8;--line:#263045;}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);padding:env(safe-area-inset-top,0px) 16px env(safe-area-inset-bottom,0px)}
+header{background:linear-gradient(120deg,#0b2545,#13315c);color:#fff;padding:20px 24px;border-radius:14px;margin:16px 0}
+header h1{margin:0;font-size:1.4rem}
+header p{margin:4px 0 0;opacity:.75;font-size:.9rem}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.kpi .label{font-size:.8rem;color:var(--muted)}
+.kpi .value{font-size:1.9rem;font-weight:700;margin:6px 0 2px}
+.kpi .sub{font-size:.8rem;color:var(--muted)}
+.ok{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}
+.wide{grid-column:span 2}.full{grid-column:1/-1}
+@media(max-width:640px){.wide{grid-column:1/-1}}
+h2{font-size:.95rem;margin:0 0 10px}
+.chart{position:relative;height:260px}
+.alert{padding:10px 12px;border-radius:10px;font-size:.88rem;margin-bottom:8px;border-left:4px solid}
+.alert.ok{background:rgba(26,158,92,.1);border-color:var(--green);color:var(--ink)}
+.alert.warn{background:rgba(224,161,0,.12);border-color:var(--amber);color:var(--ink)}
+.alert.bad{background:rgba(214,69,65,.1);border-color:var(--red);color:var(--ink)}
+details summary{cursor:pointer;font-weight:600;font-size:.95rem}
+.form{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-top:12px}
+label{font-size:.8rem;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+input,textarea{font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+textarea{width:100%;min-height:70px}
+.note{font-size:.78rem;color:var(--muted);margin-top:10px}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+td,th{padding:6px;border-bottom:1px solid var(--line);text-align:right}
+th:first-child,td:first-child{text-align:left}
+.guia{background:var(--bg);border:1px dashed var(--line);border-radius:10px;padding:12px;margin:10px 0}
+.guia dt{font-weight:600;margin-top:8px}
+.guia dd{margin:2px 0 0 0;color:var(--muted);font-size:.85rem}
+</style>
+</head>
+<body>
+<header>
+  <h1>Monitor de Eficiencia y Gestión Energética</h1>
+  <p id="periodo">Periodo de análisis: datos de ejemplo — reemplace con los datos del medidor</p>
+</header>
+
+<div class="grid">
+  <div class="card kpi"><div class="label">Energía total</div><div class="value" id="kE">—</div><div class="sub" id="kEc">costo estimado</div></div>
+  <div class="card kpi"><div class="label">Demanda máxima</div><div class="value" id="kD">—</div><div class="sub" id="kDs">de límite contratado</div></div>
+  <div class="card kpi"><div class="label">Factor de potencia</div><div class="value" id="kF">—</div><div class="sub" id="kFs">meta mínima</div></div>
+  <div class="card kpi"><div class="label">Desbalance de corriente</div><div class="value" id="kB">—</div><div class="sub">objetivo menor a 5%</div></div>
+</div>
+
+<div class="grid" style="margin-top:14px">
+  <div class="card wide"><h2>Curva de demanda por hora (kW)</h2><div class="chart"><canvas id="cDem"></canvas></div></div>
+  <div class="card"><h2>Consumo por periodo tarifario</h2><div class="chart"><canvas id="cPer"></canvas></div></div>
+  <div class="card wide"><h2>Corriente por fase (A)</h2><div class="chart"><canvas id="cCor"></canvas></div></div>
+  <div class="card"><h2>Costo por periodo</h2><div class="chart"><canvas id="cCos"></canvas></div></div>
+  <div class="card full"><h2>Diagnóstico y recomendaciones</h2><div id="alertas"></div></div>
+</div>
+
+<div class="card" style="margin-top:14px">
+<details>
+  <summary>Ajustar parámetros y datos del medidor</summary>
+<div class="guia">
+<p><b>¿Cómo usar este panel?</b> Hay dos formas de alimentar el dashboard: (1) suba el archivo CSV que entrega el medidor y el sistema calcula todo automáticamente, o (2) cambie los valores a mano para simular escenarios, por ejemplo, qué pasaría si se reduce la demanda en horas pico.</p>
+<label>Subir archivo del medidor (CSV)<input type="file" id="archivo" accept=".csv,.txt"></label>
+<p id="estadoCSV" class="note">Sin archivo cargado: se muestran datos de ejemplo.</p>
+<p class="note">El archivo debe tener encabezados como <b>Hora, kW_Total, I_L1, I_L2, I_L3, FP y Desbalance</b>. Si hay varios días, el sistema promedia cada hora del día.</p>
+<p><b>Glosario</b></p>
+<dl>
+<dt>kWh (energía)</dt><dd>Lo que se consumió en el periodo. Cuanto más se consume, más se paga.</dd>
+<dt>kW (demanda)</dt><dd>Qué tan fuerte es el consumo en un instante. Se cobra por el pico más alto del periodo, aunque dure poco.</dd>
+<dt>Factor de potencia</dt><dd>Qué parte de la energía se aprovecha realmente. 1.00 es lo ideal. Por debajo de la meta, la CFE aplica penalización.</dd>
+<dt>Desbalance de corriente</dt><dd>Diferencia entre las tres fases. Un valor alto calienta motores y cables y acorta su vida útil.</dd>
+<dt>Periodos tarifarios</dt><dd>La electricidad cuesta más en Punta (horas de mayor demanda) que en Base (madrugada).</dd>
+</dl>
+</div>
+  <div class="form">
+    <label>Tarifa Base (madrugada) $/kWh<input type="number" step="0.01" id="tB" value="1.20"></label>
+    <label>Tarifa Intermedia $/kWh<input type="number" step="0.01" id="tI" value="2.10"></label>
+    <label>Tarifa Punta $/kWh<input type="number" step="0.01" id="tP" value="3.40"></label>
+    <label>Cargo por demanda $/kW<input type="number" step="1" id="tD" value="180"></label>
+    <label>Límite de demanda contratada (kW)<input type="number" step="1" id="lim" value="150"></label>
+    <label>Factor de potencia mínimo<input type="number" step="0.01" id="fpm" value="0.90"></label>
+    <label>Penalización por cada 0.01 bajo FP mínimo (%)<input type="number" step="0.1" id="pen" value="0.5"></label>
+    <label>Desbalance máximo permitido (%)<input type="number" step="0.1" id="dbm" value="5"></label>
+    <label>Factor de potencia promedio<input type="number" step="0.01" id="fp" value="0.91"></label>
+    <label>Desbalance de corriente (%)<input type="number" step="0.01" id="db" value="3.49"></label>
+  </div>
+  <div style="margin-top:12px">
+    <label>Demanda horaria kW (24 valores separados por coma, hora 0 a 23)
+      <textarea id="horas">32,32,31,31,33,60,110,130,140,125,128,142,150,157,145,130,120,95,70,50,40,35,33,32</textarea>
+    </label>
+    <label style="margin-top:8px">Corriente por fase (A): tres series de 24 valores, una por línea (L1, L2, L3)
+      <textarea id="fases" style="min-height:90px">40,40,40,40,42,80,140,175,185,170,172,190,198,205,190,172,168,185,205,215,190,110,60,45
+42,42,41,41,43,82,144,180,190,175,176,195,203,210,195,176,172,190,210,220,194,112,62,46
+38,38,38,38,40,78,136,170,180,166,168,186,194,200,186,168,164,180,200,210,186,106,58,43</textarea>
+    </label>
+  </div>
+  <p class="note">Costo estimado = kWh por periodo × tarifa + demanda máxima × cargo por demanda, con penalización por bajo factor de potencia. Los valores de ejemplo deben sustituirse por las lecturas reales del medidor y las tarifas del recibo de CFE vigente.</p>
+</details>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const P=[ // periodos tarifarios por hora
+ {n:"Base (madrugada)",h:[0,1,2,3,4,5,22,23],c:"--base"},
+ {n:"Intermedia",h:[6,7,8,9,10,11,12,13,14,15,16,17],c:"--int"},
+ {n:"Punta",h:[18,19,20,21],c:"--punta"}];
+const per=h=>P.find(p=>p.h.includes(h));
+let charts={};
+function opts(extra){return Object.assign({responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:getComputedStyle(document.body).color}}},scales:{x:{ticks:{color:"#8a94a8"},grid:{display:false}},y:{ticks:{color:"#8a94a8"},grid:{color:"rgba(128,128,128,.15)"}}}},extra||{});}
+function mk(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart($(id),cfg);}
+function nums(s){return s.split(/[,\s]+/).map(Number).filter(x=>!isNaN(x));}
+function render(){
+  const hs=nums($("horas").value); const fases=$("fases").value.trim().split("\n").map(nums);
+  const tB=+$("tB").value,tI=+$("tI").value,tP=+$("tP").value,tD=+$("tD").value,lim=+$("lim").value;
+  const fpm=+$("fpm").value,pen=+$("pen").value,dbm=+$("dbm").value,fp=+$("fp").value,db=+$("db").value;
+  const hours=Array.from({length:24},(_,i)=>i);
+  const E=hs.reduce((a,b)=>a+b,0); const D=Math.max(...hs);
+  const ePer=P.map(p=>p.h.reduce((a,h)=>a+(hs[h]||0),0));
+  const cPer=P.map((p,i)=>ePer[i]*[tB,tI,tP][i]);
+  const cDem=D*tD; const cEnergia=cPer.reduce((a,b)=>a+b,0);
+  const pct=Math.max(0,(fpm-fp)*100)*pen; const cPen=(cEnergia+cDem)*pct/100;
+  const total=cEnergia+cDem+cPen;
+  // KPIs
+  $("kE").textContent=E.toFixed(1)+" kWh"; $("kEc").textContent="Costo estimado: $"+total.toLocaleString("es-MX",{maximumFractionDigits:0});
+  $("kD").textContent=D.toFixed(1)+" kW"; const ud=D/lim*100;
+  $("kDs").textContent=ud.toFixed(0)+"% del límite de "+lim+" kW"; $("kDs").className="sub "+(ud>100?"bad":ud>90?"warn":"ok");
+  $("kF").textContent=fp.toFixed(2); $("kF").className="value "+(fp>=fpm?"ok":"bad"); $("kFs").textContent=fp>=fpm?"Cumple la meta de "+fpm:"Penalizable: por debajo de "+fpm;
+  $("kB").textContent=db.toFixed(2)+" %"; $("kB").className="value "+(db<=dbm?"ok":"bad");
+  // Gráficas
+  mk("cDem",{type:"line",data:{labels:hours.map(h=>h+":00"),datasets:[
+    {label:"Demanda (kW)",data:hs,borderColor:"#1e6fd9",backgroundColor:"rgba(30,111,217,.15)",fill:true,tension:.35,pointRadius:0},
+    {label:"Límite contratado",data:hours.map(()=>lim),borderColor:"#d64541",borderDash:[6,4],pointRadius:0}]},options:opts()});
+  mk("cPer",{type:"doughnut",data:{labels:P.map(p=>p.n),datasets:[{data:ePer,backgroundColor:["#4a90d9","#f2994a","#c0392b"]}]},options:Object.assign(opts(),{scales:{}})});
+  mk("cCor",{type:"line",data:{labels:hours.map(h=>h+":00"),datasets:["L1","L2","L3"].map((l,i)=>({label:"Fase "+l,data:fases[i]||[],borderColor:["#1e6fd9","#c0392b","#1a9e5c"][i],pointRadius:0,tension:.3}))},options:opts()});
+  mk("cCos",{type:"bar",data:{labels:[...P.map(p=>p.n),"Demanda","Penalización FP"],datasets:[{data:[...cPer,cDem,cPen],backgroundColor:["#4a90d9","#f2994a","#c0392b","#8e44ad","#7f8c8d"]}]},options:Object.assign(opts(),{plugins:{legend:{display:false}}})});
+  // Diagnóstico
+  const A=[];
+  if(ud>100)A.push(["bad",`La demanda máxima (${D.toFixed(1)} kW) supera el límite contratado. Revise la contratación o desplace cargas fuera de las horas pico para evitar cargos adicionales.`]);
+  else if(ud>90)A.push(["warn",`La demanda máxima está al ${ud.toFixed(0)}% del límite. Conviene vigilar las horas pico.`]);
+  else A.push(["ok","La demanda máxima está dentro del límite contratado."]);
+  const sPunta=ePer[2]/E*100;
+  if(sPunta>25)A.push(["warn",`El ${sPunta.toFixed(0)}% de la energía se consume en horario de Punta. Desplazar procesos a Base o Intermedia reduce el costo.`]);
+  else A.push(["ok",`Sólo el ${sPunta.toFixed(0)}% de la energía es en Punta, un uso eficiente del horario.`]);
+  if(fp<fpm)A.push(["bad",`El factor de potencia (${fp.toFixed(2)}) está por debajo de ${fpm}. Instalar banco de capacitores puede eliminar la penalización de $${cPen.toFixed(0)}.`]);
+  else A.push(["ok","El factor de potencia cumple la meta, sin penalización."]);
+  if(db>dbm)A.push(["bad",`El desbalance de corriente (${db.toFixed(2)}%) excede ${dbm}%. Redistribuya las cargas monofásicas entre fases.`]);
+  else A.push(["ok","El desbalance de corriente está dentro del rango aceptable."]);
+  $("alertas").innerHTML=A.map(([c,t])=>`<div class="alert ${c}">${t}</div>`).join("");
+}
+function leerCSV(texto){
+  const lineas=texto.trim().split(/\r?\n/).filter(l=>l.trim());
+  const sep=lineas[0].includes(";")?";":",";
+  const enc=lineas[0].split(sep).map(h=>h.trim().toLowerCase());
+  const col=re=>enc.findIndex(h=>re.test(h));
+  const iH=col(/hora|hour|time|fecha/), iK=col(/kw/), iF=col(/\bfp\b|pf|factor/), iD=col(/desbal|unbal/);
+  const iL=[col(/i_?l1|^l1/),col(/i_?l2|^l2/),col(/i_?l3|^l3/)];
+  const num=v=>parseFloat(String(v||"").trim().replace(",",sep===";"?".":""))||0;
+  const s=Array.from({length:24},()=>({n:0,k:0,l:[0,0,0]}));
+  let fpT=0,nF=0,dT=0,nD=0;
+  lineas.slice(1).forEach((l,idx)=>{
+    const c=l.split(sep);
+    let h=iH>=0?(String(c[iH]).match(/(\d{1,2}):\d{2}/)?.[1]??c[iH]):idx%24;
+    h=+h; if(isNaN(h)) h=idx%24; h=((h%24)+24)%24;
+    const x=s[h]; x.n++;
+    if(iK>=0) x.k+=num(c[iK]);
+    iL.forEach((j,i)=>{if(j>=0) x.l[i]+=num(c[j]);});
+    if(iF>=0){fpT+=num(c[iF]);nF++;}
+    if(iD>=0){dT+=num(c[iD]);nD++;}
+  });
+  const avg=(v,n)=>n?(v/n).toFixed(1):"0";
+  $("horas").value=s.map(x=>avg(x.k,x.n)).join(",");
+  $("fases").value=[0,1,2].map(i=>s.map(x=>avg(x.l[i],x.n)).join(",")).join("\n");
+  if(nF) $("fp").value=(fpT/nF).toFixed(2);
+  if(nD) $("db").value=(dT/nD).toFixed(2);
+  $("estadoCSV").textContent=`Archivo cargado: ${lineas.length-1} registros. Detectado: demanda ${iK>=0?"sí":"no"}, corrientes ${iL.filter(j=>j>=0).length} de 3, factor de potencia ${iF>=0?"sí":"no"}, desbalance ${iD>=0?"sí":"no"}.`;
+  render();
+}
+$("archivo").addEventListener("change",e=>{const f=e.target.files[0]; if(f) f.text().then(leerCSV);});
+document.querySelectorAll("input,textarea").forEach(e=>e.addEventListener("input",render));
+render();
+</script>
+</body>
+</html>
